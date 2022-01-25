@@ -85,6 +85,22 @@ class normal_meanfield : public base_family {
   int dimension() const { return dimension_; }
 
   /**
+   * Return the dimensionality of the parameter space (#mean parameters + #covariance parameters).
+   */
+  int parameters() const { return 2*dimension_; }
+
+  /**
+   * Return a name for each mu_ parameter and each omega_ parameter, given a vector of names for each dimension.
+   */
+  void get_param_names(const std::vector<std::string>& dimension_names, std::vector<std::string>& names) const {
+    names.resize(0);
+    for (std::string dim_name : dimension_names)
+      names.push_back("mu_" + dim_name);
+    for (std::string dim_name : dimension_names)
+      names.push_back("omega_" + dim_name);
+  }
+
+  /**
    * Return the mean vector.
    */
   const Eigen::VectorXd& mu() const { return mu_; }
@@ -130,6 +146,25 @@ class normal_meanfield : public base_family {
                                  dimension());
     stan::math::check_not_nan(function, "Input vector", omega);
     omega_ = omega;
+  }
+
+  /**
+   * Set all parameters (mu and omega) given parameters from unconstrained space 'theta'
+   *
+   * @param[in] theta vector of length 2*dimensions containing all mu values followed by all omega values
+   * @throw std::domain_error If theta's size does not match this approximation's number of parameters,
+   * or if it contains not-a-number values.
+   */
+  void set_theta(const Eigen::VectorXd& theta) {
+    static const char* function
+        = "stan::variational::normal_meanfield::set_theta";
+
+    stan::math::check_size_match(function, "Dimension of input vector",
+                                 theta.size(), "Dimension of current vector",
+                                 2*dimension());
+    stan::math::check_not_nan(function, "Input vector", theta);
+    set_mu(theta.head(dimension()));
+    set_omega(theta.tail(dimension()));
   }
 
   /**
@@ -289,6 +324,14 @@ class normal_meanfield : public base_family {
     return 0.5 * static_cast<double>(dimension())
                * (1.0 + stan::math::LOG_TWO_PI)
            + omega_.sum();
+  }
+
+  /**
+   * Return log determininant of Fisher Information Matrix.
+   */
+  template<typename T>
+  T log_det_fisher() const {
+    return -2.0 * omega_.sum();
   }
 
   /**
