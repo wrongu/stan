@@ -10,8 +10,8 @@
 #include <stan/io/var_context.hpp>
 #include <stan/services/experimental/isvi/isvi_stams_wrapper.hpp>
 #include <boost/random/additive_combine.hpp>
-#include <stan/mcmc/hmc/nuts/diag_e_nuts.hpp>
-#include <stan/services/util/run_sampler.hpp>
+#include <stan/mcmc/hmc/nuts/adapt_diag_e_nuts.hpp>
+#include <stan/services/util/run_adaptive_sampler.hpp>
 #include <stan/services/util/create_rng.hpp>
 #include <stan/services/util/initialize.hpp>
 #include <stan/services/util/inv_metric.hpp>
@@ -99,7 +99,7 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   }
 
   logger.debug("CREATING SAMPLER");
-  stan::mcmc::diag_e_nuts<Model, boost::ecuyer1988> sampler(wrapped_model, rng);
+  stan::mcmc::adapt_diag_e_nuts<Model, boost::ecuyer1988> sampler(wrapped_model, rng);
 
   sampler.set_metric(inv_metric);
   sampler.set_nominal_stepsize(stepsize);
@@ -107,9 +107,9 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   sampler.set_max_depth(max_depth);
 
   logger.debug("RUNNING SAMPLER");
-  util::run_sampler(sampler, wrapped_model, cont_vector, num_warmup, num_samples,
-                    num_thin, refresh, save_warmup, rng, interrupt, logger,
-                    sample_writer, diagnostic_writer);
+  util::run_adaptive_sampler(sampler, wrapped_model, cont_vector, num_warmup, num_samples,
+                             num_thin, refresh, save_warmup, rng, interrupt, logger,
+                             sample_writer, diagnostic_writer);
 
   return error_codes::OK;
 }
