@@ -47,7 +47,6 @@ namespace isvi {
  * @param[in] stepsize_jitter uniform random jitter of stepsize
  * @param[in] max_depth Maximum tree depth
  * ---------- ADVI-like arguments ----------
- * @param[in] grad_samples number of samples for Monte Carlo estimate of gradients
  * @param[in] kl_samples number of samples for Monte Carlo estimate of kl
  * @param[in] lambda controls Sampling/VI trade-off
  * ---------- Further common arguments ----------
@@ -64,7 +63,7 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
                             double init_radius, int num_warmup, int num_samples,
                             int num_thin, bool save_warmup, int refresh,
                             double stepsize, double stepsize_jitter, int max_depth,
-                            int grad_samples, int kl_samples, double lambda,
+                            int kl_samples, double lambda,
                             callbacks::interrupt& interrupt,
                             callbacks::logger& logger, 
                             callbacks::writer& init_writer,
@@ -78,7 +77,7 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   // will pass to the sampler.
   logger.debug("CREATING WRAPPED_MODEL");
   stan::isvi::isvi_stams_model_wrapper<Model, boost::ecuyer1988>
-    wrapped_model(model, rng, grad_samples, kl_samples, lambda);
+    wrapped_model(model, rng, kl_samples, lambda);
 
   logger.debug("INITIALIZING");
   std::vector<double> cont_vector = util::initialize(

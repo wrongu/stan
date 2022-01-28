@@ -53,18 +53,14 @@ inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int d
 template <class Model, class BaseRNG>
 class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>> {
  public:
-  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_grad, int n_monte_carlo_kl, double lambda)
+  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_kl, double lambda)
   : stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>>(2*m.num_params_r()),
   wrapped_(m),
   rng_(rng),
-  n_monte_carlo_grad_(n_monte_carlo_grad),
   n_monte_carlo_kl_(n_monte_carlo_kl),
   lambda_(lambda) {
     // Sanity checks on inputs
     static const char* function = "stan::isvi::isvi_stams";
-    math::check_positive(function,
-      "Number of Monte Carlo samples for gradients",
-      n_monte_carlo_grad_);
     math::check_positive(function,
       "Number of Monte Carlo samples for KL",
       n_monte_carlo_kl_);
@@ -264,7 +260,6 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
  protected:
   Model& wrapped_;
   BaseRNG& rng_;
-  int n_monte_carlo_grad_;
   int n_monte_carlo_kl_;
   double lambda_;
 };
