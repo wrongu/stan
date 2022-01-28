@@ -30,14 +30,30 @@ inline T q_log_det_fisher(Eigen::Matrix<T, -1, 1>& params_r, int dim){
   return -2.0 * log_sigma_.sum();
 }
 
-template <typename T, class BaseRNG>
-inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int dim, BaseRNG& rng){
-  // Initialize to the mean
+// template <typename T, class BaseRNG>
+// inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int dim, BaseRNG& rng){
+//   // Initialize to the mean
+//   auto z_ = params_r.head(dim);
+//   auto sigma_ = stan::math::exp(params_r.tail(dim));
+//   // Perturb each dimension by random noise proportional to sigma
+//   for (int d=0; d<dim; ++d)
+//     z_[d] += sigma_[d] * stan::math::normal_rng(0, 1, rng);
+//   return z_;
+// }
+
+template <typename T>
+inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int dim, const std::vector<double>& eta){
+  // Given 'eta', which is a single sample from dim-dimensional normal(0,1),
+  // transform it into a sample from q.
+  if(eta.size() != dim)
+    throw new std::runtime_error("stan::isvi::q_sample wrong size for eta!");
+  
   auto z_ = params_r.head(dim);
   auto sigma_ = stan::math::exp(params_r.tail(dim));
-  // Perturb each dimension by random noise proportional to sigma
-  for (int d=0; d<dim; ++d)
-    z_[d] += sigma_[d] * stan::math::normal_rng(0, 1, rng);
+  
+  // TODO - learn Eigen and write using matrix ops
+  for(int d=0; d<dim; ++d)
+    z_[d] += sigma_[d] * eta[d];
   return z_;
 }
 /** ------------------------------------------------------------------ */
@@ -58,7 +74,8 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   wrapped_(m),
   rng_(rng),
   n_monte_carlo_kl_(n_monte_carlo_kl),
-  lambda_(lambda) {
+  lambda_(lambda),
+  presampled_eta_(n_monte_carlo_kl){
     // Sanity checks on inputs
     static const char* function = "stan::isvi::isvi_stams";
     math::check_positive(function,
@@ -67,6 +84,14 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
     math::check_positive(function,
       "Lambda must be greater than or equal to 1.0",
       lambda - 1.0);
+
+    int dim = m.num_params_r();
+    for(int i=0; i<n_monte_carlo_kl_; ++i){
+      presampled_eta_[i] = std::vector<double>(dim);
+      for(int j=0; j<m.num_params_r(); ++j){
+        presampled_eta_[i][j] = stan::math::normal_rng(0, 1, rng_);
+      }
+    }
   }
 
   // ===== BEGIN BLOCK COPIED FROM ADVI =====
@@ -82,7 +107,7 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
     int dim = wrapped_.num_params_r();
     int n_dropped_evaluations = 0;
     for (int i = 0; i < n_monte_carlo_kl_;) {
-      auto zeta = q_sample<T>(theta, dim, rng_);
+      auto zeta = q_sample<T>(theta, dim, presampled_eta_[i]);
       try {
         std::stringstream ss;
         T log_prob = wrapped_.template log_prob<false, true, T>(zeta, &ss);
@@ -261,6 +286,7 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   Model& wrapped_;
   BaseRNG& rng_;
   int n_monte_carlo_kl_;
+  std::vector<std::vector<double>> presampled_eta_;  // TODO make this a matrix
   double lambda_;
 };
 
