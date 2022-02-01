@@ -46,6 +46,13 @@ namespace isvi {
  * @param[in] stepsize initial stepsize for discrete evolution
  * @param[in] stepsize_jitter uniform random jitter of stepsize
  * @param[in] max_depth Maximum tree depth
+ * @param[in] delta adaptation target acceptance statistic
+ * @param[in] gamma adaptation regularization scale
+ * @param[in] kappa adaptation relaxation exponent
+ * @param[in] t0 adaptation iteration offset
+ * @param[in] init_buffer width of initial fast adaptation interval
+ * @param[in] term_buffer width of final fast adaptation interval
+ * @param[in] window initial width of slow adaptation interval
  * ---------- ADVI-like arguments ----------
  * @param[in] kl_samples number of samples for Monte Carlo estimate of kl
  * @param[in] lambda controls Sampling/VI trade-off
@@ -62,7 +69,10 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
                             unsigned int random_seed, unsigned int chain,
                             double init_radius, int num_warmup, int num_samples,
                             int num_thin, bool save_warmup, int refresh,
-                            double stepsize, double stepsize_jitter, int max_depth,
+                            double stepsize, double stepsize_jitter,
+                            int max_depth, double delta, double gamma,
+                            double kappa, double t0, unsigned int init_buffer,
+                            unsigned int term_buffer, unsigned int window,
                             int kl_samples, double lambda,
                             callbacks::interrupt& interrupt,
                             callbacks::logger& logger, 
@@ -105,6 +115,14 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   sampler.set_nominal_stepsize(stepsize);
   sampler.set_stepsize_jitter(stepsize_jitter);
   sampler.set_max_depth(max_depth);
+
+  sampler.get_stepsize_adaptation().set_mu(log(10 * stepsize));
+  sampler.get_stepsize_adaptation().set_delta(delta);
+  sampler.get_stepsize_adaptation().set_gamma(gamma);
+  sampler.get_stepsize_adaptation().set_kappa(kappa);
+  sampler.get_stepsize_adaptation().set_t0(t0);
+  sampler.set_window_params(num_warmup, init_buffer, term_buffer, window,
+                            logger);
 
   logger.debug("RUNNING SAMPLER");
   util::run_adaptive_sampler(sampler, wrapped_model, cont_vector, num_warmup, num_samples,
