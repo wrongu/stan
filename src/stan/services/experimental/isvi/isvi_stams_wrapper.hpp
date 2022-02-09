@@ -106,14 +106,15 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
     T kl = 0.0;
     int dim = wrapped_.num_params_r();
     int n_dropped_evaluations = 0;
-    for (int i = 0; i < n_monte_carlo_kl_;) {
+    int n_succeeded_evaluations = 0;
+    for (int i = 0; i < n_monte_carlo_kl_; ++i) {
       auto zeta = q_sample<T>(theta, dim, presampled_eta_[i]);
       try {
         std::stringstream ss;
         T log_prob = wrapped_.template log_prob<false, true, T>(zeta, &ss);
         stan::math::check_finite(function, "log_prob", log_prob);
         kl -= log_prob;
-        ++i;
+        n_succeeded_evaluations++;
       } catch (const std::domain_error& e) {
         ++n_dropped_evaluations;
         if (n_dropped_evaluations >= n_monte_carlo_kl_) {
@@ -127,7 +128,7 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
         }
       }
     }
-    kl /= n_monte_carlo_kl_;
+    kl /= n_succeeded_evaluations;
     kl -= q_entropy<T>(theta, dim);
     return kl;
   }
