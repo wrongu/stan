@@ -71,7 +71,7 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
                             int max_depth, double delta, double gamma,
                             double kappa, double t0, unsigned int init_buffer,
                             unsigned int term_buffer, unsigned int window,
-                            int kl_samples, double lambda,
+                            int kl_samples, double lambda, bool stochastic,
                             callbacks::interrupt& interrupt,
                             callbacks::logger& logger, 
                             callbacks::writer& init_writer,
@@ -85,7 +85,7 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   // will pass to the sampler.
   logger.debug("CREATING WRAPPED_MODEL");
   stan::isvi::isvi_stams_model_wrapper<Model, boost::ecuyer1988>
-    wrapped_model(model, rng, kl_samples, lambda);
+    wrapped_model(model, rng, kl_samples, lambda, stochastic);
 
   logger.debug("INITIALIZING");
   std::vector<double> cont_vector = util::initialize(

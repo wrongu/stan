@@ -30,16 +30,17 @@ inline T q_log_det_fisher(Eigen::Matrix<T, -1, 1>& params_r, int dim){
   return -2.0 * log_sigma_.sum();
 }
 
-// template <typename T, class BaseRNG>
-// inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int dim, BaseRNG& rng){
-//   // Initialize to the mean
-//   auto z_ = params_r.head(dim);
-//   auto sigma_ = stan::math::exp(params_r.tail(dim));
-//   // Perturb each dimension by random noise proportional to sigma
-//   for (int d=0; d<dim; ++d)
-//     z_[d] += sigma_[d] * stan::math::normal_rng(0, 1, rng);
-//   return z_;
-// }
+template <typename T, class BaseRNG>
+inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int dim, BaseRNG& rng){
+  // Initialize to the mean
+  auto mu_ = params_r.head(dim);
+  auto sigma_ = stan::math::exp(params_r.tail(dim));
+  auto eta_ = Eigen::VectorXd::Zero(dim);
+  for (int i=0; i<dim; ++i){
+    eta_(i) = stan::math::normal_rng(0, 1, rng);
+  }
+  return mu_ + sigma_.cwiseProduct(eta_);
+}
 
 template <typename T>
 inline Eigen::Matrix<T, -1, 1> q_sample(const Eigen::Matrix<T, -1, 1>& params_r, int dim, const Eigen::VectorXd& eta){
@@ -65,12 +66,13 @@ inline Eigen::Matrix<T, -1, 1> q_sample(const Eigen::Matrix<T, -1, 1>& params_r,
 template <class Model, class BaseRNG>
 class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>> {
  public:
-  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_kl, double lambda)
+  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_kl, double lambda, bool stochastic)
   : stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>>(2*m.num_params_r()),
   wrapped_(m),
   rng_(rng),
   n_monte_carlo_kl_(n_monte_carlo_kl),
   lambda_(lambda),
+  stochastic_(stochastic),
   presampled_eta_(n_monte_carlo_kl, m.num_params_r()){
     // Sanity checks on inputs
     static const char* function = "stan::isvi::isvi_stams";
@@ -81,12 +83,14 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
       "Lambda must be greater than or equal to 1.0",
       lambda - 1.0);
 
+    // Note: these 'presampled' values will only be used if stochastic is false.
     int dim = m.num_params_r();
     for(int i=0; i<n_monte_carlo_kl_; ++i){
       for(int j=0; j<m.num_params_r(); ++j){
         presampled_eta_(i,j) = stan::math::normal_rng(0, 1, rng_);
       }
     }
+
   }
 
   // ===== BEGIN BLOCK COPIED FROM ADVI =====
@@ -98,18 +102,21 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   T kl_q_p(Eigen::Matrix<T,-1,1>& theta) const {
     static const char* function = "stan::isvi::kl_q_p";
     
-
-    T kl = 0.0;
+    T cross_entropy = 0.0;
     int dim = wrapped_.num_params_r();
     int n_dropped_evaluations = 0;
     int n_succeeded_evaluations = 0;
     for (int i = 0; i < n_monte_carlo_kl_; ++i) {
-      auto zeta = q_sample<T>(theta, dim, presampled_eta_.row(i));
+      if (stochastic_){
+        auto zeta = q_sample<T>(theta, dim, rng_);
+      } else{
+        auto zeta = q_sample<T>(theta, dim, presampled_eta_.row(i));
+      }
       try {
         std::stringstream ss;
         T log_prob = wrapped_.template log_prob<false, true, T>(zeta, &ss);
         stan::math::check_finite(function, "log_prob", log_prob);
-        kl -= log_prob;
+        cross_entropy -= log_prob / n_monte_carlo_kl_;
         n_succeeded_evaluations++;
       } catch (const std::domain_error& e) {
         ++n_dropped_evaluations;
@@ -124,9 +131,11 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
         }
       }
     }
-    kl /= n_succeeded_evaluations;
-    kl -= q_entropy<T>(theta, dim);
-    return kl;
+    // As of here, cross_entropy = sum of successful terms / n_kl. Need
+    // to adjust denominator to only average 'successful' terms.
+    cross_entropy = cross_entropy * (n_monte_carlo_kl_ / n_succeeded_evaluations);
+    // KL = CE - H
+    return cross_entropy - q_entropy<T>(theta, dim);
   }
   // ===== END BLOCK COPIED FROM ADVI =====
 
@@ -283,8 +292,9 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   Model& wrapped_;
   BaseRNG& rng_;
   int n_monte_carlo_kl_;
-  Eigen::MatrixXd presampled_eta_;
   double lambda_;
+  bool stochastic_;
+  Eigen::MatrixXd presampled_eta_;
 };
 
 }  // namespace isvi
