@@ -42,19 +42,15 @@ inline T q_log_det_fisher(Eigen::Matrix<T, -1, 1>& params_r, int dim){
 // }
 
 template <typename T>
-inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int dim, const std::vector<double>& eta){
+inline Eigen::Matrix<T, -1, 1> q_sample(const Eigen::Matrix<T, -1, 1>& params_r, int dim, const Eigen::VectorXd& eta){
   // Given 'eta', which is a single sample from dim-dimensional normal(0,1),
   // transform it into a sample from q.
   if(eta.size() != dim)
     throw new std::runtime_error("stan::isvi::q_sample wrong size for eta!");
   
-  auto z_ = params_r.head(dim);
+  auto mu_ = params_r.head(dim);
   auto sigma_ = stan::math::exp(params_r.tail(dim));
-  
-  // TODO - learn Eigen and write using matrix ops
-  for(int d=0; d<dim; ++d)
-    z_[d] += sigma_[d] * eta[d];
-  return z_;
+  return mu_ + sigma_.cwiseProduct(eta);
 }
 /** ------------------------------------------------------------------ */
 
@@ -75,7 +71,7 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   rng_(rng),
   n_monte_carlo_kl_(n_monte_carlo_kl),
   lambda_(lambda),
-  presampled_eta_(n_monte_carlo_kl){
+  presampled_eta_(n_monte_carlo_kl, m.num_params_r()){
     // Sanity checks on inputs
     static const char* function = "stan::isvi::isvi_stams";
     math::check_positive(function,
@@ -87,9 +83,8 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
 
     int dim = m.num_params_r();
     for(int i=0; i<n_monte_carlo_kl_; ++i){
-      presampled_eta_[i] = std::vector<double>(dim);
       for(int j=0; j<m.num_params_r(); ++j){
-        presampled_eta_[i][j] = stan::math::normal_rng(0, 1, rng_);
+        presampled_eta_(i,j) = stan::math::normal_rng(0, 1, rng_);
       }
     }
   }
@@ -102,13 +97,14 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   template<typename T>
   T kl_q_p(Eigen::Matrix<T,-1,1>& theta) const {
     static const char* function = "stan::isvi::kl_q_p";
+    
 
     T kl = 0.0;
     int dim = wrapped_.num_params_r();
     int n_dropped_evaluations = 0;
     int n_succeeded_evaluations = 0;
     for (int i = 0; i < n_monte_carlo_kl_; ++i) {
-      auto zeta = q_sample<T>(theta, dim, presampled_eta_[i]);
+      auto zeta = q_sample<T>(theta, dim, presampled_eta_.row(i));
       try {
         std::stringstream ss;
         T log_prob = wrapped_.template log_prob<false, true, T>(zeta, &ss);
@@ -287,7 +283,7 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   Model& wrapped_;
   BaseRNG& rng_;
   int n_monte_carlo_kl_;
-  std::vector<std::vector<double>> presampled_eta_;  // TODO make this a matrix
+  Eigen::MatrixXd presampled_eta_;
   double lambda_;
 };
 
