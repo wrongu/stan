@@ -32,8 +32,6 @@ namespace isvi {
  * @tparam Model A model implementation
  * @param[in] model Input model to test (with data already instantiated)
  * @param[in] init var context for initialization
- * @param[in] init_inv_metric var context exposing an initial diagonal
- *            inverse Euclidean metric (must be positive definite)
  * @param[in] random_seed random seed for the random number generator
  * @param[in] chain chain id to advance the random number generator
  * @param[in] init_radius radius to initialize
@@ -94,19 +92,9 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
       wrapped_model, init, rng, init_radius, true, logger, init_writer);
 
   logger.debug("CREATING INV_METRIC");
-  stan::io::dump dmp
-      = util::create_unit_e_diag_inv_metric(wrapped_model.num_params_r());
-  stan::io::var_context& unit_e_metric = dmp;
-
-  Eigen::VectorXd inv_metric;
-  try {
-    inv_metric = util::read_diag_inv_metric(unit_e_metric,
-                                            wrapped_model.num_params_r(),
-                                            logger);
-    util::validate_diag_inv_metric(inv_metric, logger);
-  } catch (const std::domain_error& e) {
-    return error_codes::CONFIG;
-  }
+  Eigen::VectorXd inv_metric = Eigen::VectorXd::Ones(wrapped_model.num_params_r()) / lambda;
+  util::validate_diag_inv_metric(inv_metric, logger);
+  std::cout << "INV_METRIC IS " << inv_metric << std::endl;
 
   logger.debug("CREATING SAMPLER");
   stan::mcmc::adapt_diag_e_nuts<Model, boost::ecuyer1988> sampler(wrapped_model, rng);
