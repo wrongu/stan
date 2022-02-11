@@ -30,18 +30,6 @@ inline T q_log_det_fisher(Eigen::Matrix<T, -1, 1>& params_r, int dim){
   return -2.0 * log_sigma_.sum();
 }
 
-template <typename T, class BaseRNG>
-inline Eigen::Matrix<T, -1, 1> q_sample(Eigen::Matrix<T, -1, 1>& params_r, int dim, BaseRNG& rng){
-  // Initialize to the mean
-  auto mu_ = params_r.head(dim);
-  auto sigma_ = stan::math::exp(params_r.tail(dim));
-  auto eta_ = Eigen::VectorXd::Zero(dim);
-  for (int i=0; i<dim; ++i){
-    eta_(i) = stan::math::normal_rng(0, 1, rng);
-  }
-  return mu_ + sigma_.cwiseProduct(eta_);
-}
-
 template <typename T>
 inline Eigen::Matrix<T, -1, 1> q_sample(const Eigen::Matrix<T, -1, 1>& params_r, int dim, const Eigen::VectorXd& eta){
   // Given 'eta', which is a single sample from dim-dimensional normal(0,1),
@@ -83,14 +71,19 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
       "Lambda must be greater than or equal to 1.0",
       lambda - 1.0);
 
-    // Note: these 'presampled' values will only be used if stochastic is false.
-    int dim = m.num_params_r();
+    resample_eta();
+  }
+
+  void resample_eta() {
     for(int i=0; i<n_monte_carlo_kl_; ++i){
-      for(int j=0; j<m.num_params_r(); ++j){
-        presampled_eta_(i,j) = stan::math::normal_rng(0, 1, rng_);
+      for(int j=0; j<wrapped_.num_params_r(); ++j){
+        presampled_eta_(i, j) = stan::math::normal_rng(0, 1, rng_);
       }
     }
+  }
 
+  bool stochastic() {
+    return stochastic_;
   }
 
   // ===== BEGIN BLOCK COPIED FROM ADVI =====
@@ -107,11 +100,7 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
     int n_dropped_evaluations = 0;
     int n_succeeded_evaluations = 0;
     for (int i = 0; i < n_monte_carlo_kl_; ++i) {
-      if (stochastic_){
-        auto zeta = q_sample<T>(theta, dim, rng_);
-      } else{
-        auto zeta = q_sample<T>(theta, dim, presampled_eta_.row(i));
-      }
+      auto zeta = q_sample<T>(theta, dim, presampled_eta_.row(i));
       try {
         std::stringstream ss;
         T log_prob = wrapped_.template log_prob<false, true, T>(zeta, &ss);

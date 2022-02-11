@@ -2,6 +2,7 @@
 #define STAN_SERVICES_EXPERIMENTAL_ISVI_MEANFIELD_HPP
 
 #include <stan/callbacks/interrupt.hpp>
+#include <stan/callbacks/chain_interrupt.hpp>
 #include <stan/callbacks/logger.hpp>
 #include <stan/callbacks/writer.hpp>
 #include <stan/services/util/experimental_message.hpp>
@@ -9,6 +10,7 @@
 #include <stan/services/util/create_rng.hpp>
 #include <stan/io/var_context.hpp>
 #include <stan/services/experimental/isvi/isvi_stams_wrapper.hpp>
+#include <stan/services/experimental/isvi/interrupt_resample_eta.hpp>
 #include <boost/random/additive_combine.hpp>
 #include <stan/mcmc/hmc/nuts/adapt_diag_e_nuts.hpp>
 #include <stan/services/util/run_adaptive_sampler.hpp>
@@ -94,7 +96,6 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   logger.debug("CREATING INV_METRIC");
   Eigen::VectorXd inv_metric = Eigen::VectorXd::Ones(wrapped_model.num_params_r()) / lambda;
   util::validate_diag_inv_metric(inv_metric, logger);
-  std::cout << "INV_METRIC IS " << inv_metric << std::endl;
 
   logger.debug("CREATING SAMPLER");
   stan::mcmc::adapt_diag_e_nuts<Model, boost::ecuyer1988> sampler(wrapped_model, rng);
@@ -112,9 +113,14 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   sampler.set_window_params(num_warmup, init_buffer, term_buffer, window,
                             logger);
 
+  stan::isvi::interrupt_resample_eta<Model, boost::ecuyer1988> resample_callback(wrapped_model);
+  stan::callbacks::chain_interrupt interrupt_and_resample(
+    interrupt,
+    resample_callback);
+
   logger.debug("RUNNING SAMPLER");
   util::run_adaptive_sampler(sampler, wrapped_model, cont_vector, num_warmup, num_samples,
-                             num_thin, refresh, save_warmup, rng, interrupt, logger,
+                             num_thin, refresh, save_warmup, rng, interrupt_and_resample, logger,
                              sample_writer, diagnostic_writer);
 
   return error_codes::OK;
