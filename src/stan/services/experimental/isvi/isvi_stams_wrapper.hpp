@@ -63,12 +63,12 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   stochastic_(stochastic),
   presampled_eta_(n_monte_carlo_kl, m.num_params_r()){
     // Sanity checks on inputs
-    static const char* function = "stan::isvi::isvi_stams";
+    static const char* function = "stan::isvi::isvi_stams_model_wrapper";
     math::check_positive(function,
       "Number of Monte Carlo samples for KL",
       n_monte_carlo_kl_);
-    math::check_positive(function,
-      "Lambda must be greater than or equal to 1.0",
+    math::check_nonnegative(function,
+      "Lambda must be greater than or equal to 1",
       lambda - 1.0);
 
     resample_eta();
