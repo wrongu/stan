@@ -94,6 +94,12 @@ class normal_meanfield : public base_family {
    */
   const Eigen::VectorXd& omega() const { return omega_; }
 
+  Eigen::VectorXd parameters() const {
+    Eigen::VectorXd theta(mu_.size() + omega_.size());
+    theta << mu_, omega_;
+    return theta;
+  }
+
   /**
    * Set the mean vector to the specified value.
    *

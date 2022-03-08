@@ -369,6 +369,8 @@ class advi {
       variational
           += eta_scaled * elbo_grad / (tau + history_grad_squared.sqrt());
 
+      std::cout << "[ADVI PARAMS] " << variational.parameters() << std::endl;
+
       // Check for convergence every "eval_elbo_"th iteration
       if (iter_counter % eval_elbo_ == 0) {
         elbo_prev = elbo;

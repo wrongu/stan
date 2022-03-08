@@ -135,6 +135,12 @@ class normal_fullrank : public base_family {
    */
   const Eigen::MatrixXd& L_chol() const { return L_chol_; }
 
+  Eigen::MatrixXd parameters() const {
+    Eigen::MatrixXd theta(1+L_chol_.rows(), L_chol_.cols());
+    theta << mu_, L_chol_;
+    return theta;
+  }
+
   /**
    * Set the mean vector to the specified value.
    *
