@@ -54,13 +54,14 @@ inline Eigen::Matrix<T, -1, 1> q_sample(const Eigen::Matrix<T, -1, 1>& params_r,
 template <class Model, class BaseRNG>
 class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>> {
  public:
-  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_kl, double lambda, bool stochastic)
+  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_kl, double lambda, bool stochastic, double clip_omega)
   : stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>>(2*m.num_params_r()),
   wrapped_(m),
   rng_(rng),
   n_monte_carlo_kl_(n_monte_carlo_kl),
   lambda_(lambda),
   stochastic_(stochastic),
+  clip_omega_(clip_omega),
   presampled_eta_(n_monte_carlo_kl, m.num_params_r()){
     // Sanity checks on inputs
     static const char* function = "stan::isvi::isvi_stams_model_wrapper";
@@ -70,6 +71,9 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
     math::check_nonnegative(function,
       "Lambda must be greater than or equal to 1",
       lambda - 1.0);
+    math::check_finite(function,
+      "-Infinite clip_omega not yet supported",
+      clip_omega);
 
     resample_eta();
   }
@@ -226,7 +230,18 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
              std::ostream* msgs) const {
     T log_det_fisher = q_log_det_fisher<T>(params_r, wrapped_.num_params_r());
     T kl_qp = kl_q_p(params_r);
-    return 0.5*log_det_fisher - lambda_ * kl_qp;
+    // If log standard deviation (omega) falls below clip_omega_, this adds
+    // a gradient that nudges it back to more sensible values.
+    T clip_omega_penalty = 0.0;
+    // TODO - find the right Eigen operations to vectorize this.
+    // It's essentially clip_omega_penalty += (omega_ - clip_oemga).max(0.0).sum()
+    auto omega_ = params_r.tail(wrapped_.num_params_r());
+    for (int i=0; i<omega_.size(); ++i) {
+      if (omega_(i) < clip_omega_) {
+        clip_omega_penalty += omega_(i) - clip_omega_;
+      }
+    }
+    return 0.5*log_det_fisher - lambda_ * kl_qp + clip_omega_penalty;
   }
 
   template <bool propto, bool jacobian, typename T>
@@ -283,6 +298,7 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   int n_monte_carlo_kl_;
   double lambda_;
   bool stochastic_;
+  double clip_omega_;
   Eigen::MatrixXd presampled_eta_;
 };
 

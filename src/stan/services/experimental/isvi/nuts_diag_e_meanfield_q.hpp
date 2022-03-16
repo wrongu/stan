@@ -55,7 +55,10 @@ namespace isvi {
  * @param[in] window initial width of slow adaptation interval
  * ---------- ADVI-like arguments ----------
  * @param[in] kl_samples number of samples for Monte Carlo estimate of kl
+ * ---------- ISVI-specific arguments ----------
  * @param[in] lambda controls Sampling/VI trade-off
+ * @param[in] stochastic Boolean determining if reparameterized x~q resampled between NUTS iterations
+ * @param[in] clip_omega Minimum value for log (base e) standard deviation 'omega'
  * ---------- Further common arguments ----------
  * @param[in,out] interrupt callback to be called every sample
  * @param[in,out] logger Logger for messages
@@ -74,6 +77,7 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
                             double kappa, double t0, unsigned int init_buffer,
                             unsigned int term_buffer, unsigned int window,
                             int kl_samples, double lambda, bool stochastic,
+                            double clip_omega,
                             callbacks::interrupt& interrupt,
                             callbacks::logger& logger, 
                             callbacks::writer& init_writer,
@@ -87,7 +91,7 @@ int nuts_diag_e_meanfield_q(Model& model, const stan::io::var_context& init,
   // will pass to the sampler.
   logger.debug("CREATING WRAPPED_MODEL");
   stan::isvi::isvi_stams_model_wrapper<Model, boost::ecuyer1988>
-    wrapped_model(model, rng, kl_samples, lambda, stochastic);
+    wrapped_model(model, rng, kl_samples, lambda, stochastic, clip_omega);
 
   logger.debug("INITIALIZING");
   std::vector<double> cont_vector = util::initialize(
