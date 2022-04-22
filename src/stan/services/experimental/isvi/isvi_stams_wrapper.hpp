@@ -54,14 +54,15 @@ inline Eigen::Matrix<T, -1, 1> q_sample(const Eigen::Matrix<T, -1, 1>& params_r,
 template <class Model, class BaseRNG>
 class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>> {
  public:
-  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_kl, double lambda, bool stochastic, double clip_omega)
+  isvi_stams_model_wrapper(Model& m, BaseRNG& rng, int n_monte_carlo_kl, double lambda, bool stochastic, double min_omega, double max_omega)
   : stan::model::model_base_crtp<isvi_stams_model_wrapper<Model, BaseRNG>>(2*m.num_params_r()),
   wrapped_(m),
   rng_(rng),
   n_monte_carlo_kl_(n_monte_carlo_kl),
   lambda_(lambda),
   stochastic_(stochastic),
-  clip_omega_(clip_omega),
+  min_omega_(min_omega),
+  max_omega_(max_omega),
   presampled_eta_(n_monte_carlo_kl, m.num_params_r()){
     // Sanity checks on inputs
     static const char* function = "stan::isvi::isvi_stams_model_wrapper";
@@ -71,9 +72,15 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
     math::check_nonnegative(function,
       "Lambda must be greater than or equal to 1",
       lambda - 1.0);
+    math::check_nonnegative(function,
+      "max_omega must be larger than min_omega",
+      max_omega - min_omega);
     math::check_finite(function,
-      "-Infinite clip_omega not yet supported",
-      clip_omega);
+      "-Infinite min_omega not yet supported",
+      min_omega);
+    math::check_finite(function,
+      "+Infinite max_omega not yet supported",
+      max_omega);
 
     resample_eta();
   }
@@ -109,24 +116,22 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
         std::stringstream ss;
         T log_prob = wrapped_.template log_prob<false, true, T>(zeta, &ss);
         stan::math::check_finite(function, "log_prob", log_prob);
-        cross_entropy -= log_prob / n_monte_carlo_kl_;
+        cross_entropy -= log_prob;
         n_succeeded_evaluations++;
       } catch (const std::domain_error& e) {
-        ++n_dropped_evaluations;
-        if (n_dropped_evaluations >= n_monte_carlo_kl_) {
-          const char* name = "The number of dropped evaluations";
-          const char* msg1 = "has reached its maximum amount (";
-          const char* msg2
-              = "). Your model may be either severely "
-                "ill-conditioned or misspecified.";
-          stan::math::throw_domain_error(function, name, n_monte_carlo_kl_,
-                                         msg1, msg2);
-        }
+        n_dropped_evaluations++;
       }
     }
-    // As of here, cross_entropy = sum of successful terms / n_kl. Need
-    // to adjust denominator to only average 'successful' terms.
-    cross_entropy = cross_entropy * (n_monte_carlo_kl_ / n_succeeded_evaluations);
+
+    if (n_succeeded_evaluations == 0) {
+      const char* name = "The number of dropped evaluations";
+      const char* msg1 = "has reached its maximum amount (";
+      const char* msg2 = ").";
+      stan::math::throw_domain_error(function, name, n_dropped_evaluations, msg1, msg2);
+    }
+
+    // Denominator of average is number of *successful* points
+    cross_entropy = cross_entropy / n_succeeded_evaluations;
     // KL = CE - H
     return cross_entropy - q_entropy<T>(theta, dim);
   }
@@ -230,15 +235,16 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
              std::ostream* msgs) const {
     T log_det_fisher = q_log_det_fisher<T>(params_r, wrapped_.num_params_r());
     T kl_qp = kl_q_p(params_r);
-    // If log standard deviation (omega) falls below clip_omega_, this adds
-    // a gradient that nudges it back to more sensible values.
+    // If log standard deviation (omega) falls below min_omega_ or above max_omega_,
+    // this adds a gradient that nudges it back to more sensible values.
     T clip_omega_penalty = 0.0;
     // TODO - find the right Eigen operations to vectorize this.
-    // It's essentially clip_omega_penalty += (omega_ - clip_oemga).max(0.0).sum()
     auto omega_ = params_r.tail(wrapped_.num_params_r());
     for (int i=0; i<omega_.size(); ++i) {
-      if (omega_(i) < clip_omega_) {
-        clip_omega_penalty += omega_(i) - clip_omega_;
+      if (omega_(i) < min_omega_) {
+        clip_omega_penalty += omega_(i) - min_omega_;
+      } else if (omega_(i) > max_omega_) {
+        clip_omega_penalty += max_omega_ - omega_(i);
       }
     }
     return 0.5*log_det_fisher - lambda_ * kl_qp + clip_omega_penalty;
@@ -298,7 +304,8 @@ class isvi_stams_model_wrapper : public stan::model::model_base_crtp<isvi_stams_
   int n_monte_carlo_kl_;
   double lambda_;
   bool stochastic_;
-  double clip_omega_;
+  double min_omega_;
+  double max_omega_;
   Eigen::MatrixXd presampled_eta_;
 };
 
