@@ -91,6 +91,9 @@ class base_hmc : public base_mcmc {
 
     // Guaranteed to be finite if randomly initialized
     double H0 = this->hamiltonian_.H(this->z_);
+    stan::math::check_finite("stan::mcmc::base_hmc::init_stepsize",
+      "Hamiltonian is not finite at initialization! Cannot initialize stepsize.",
+      H0);
 
     this->integrator_.evolve(this->z_, this->hamiltonian_, this->nom_epsilon_,
                              logger);
